@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<!-- <script>
+  import { Api } from '../api';
+</script> -->
+<head>
+  <link rel="stylesheet" type="text/css" href="model.css"/>
+  <script type="text/javascript" src="lib/d3.v5.min.js"></script>
+  <script type="text/javascript" src="lib/d3-dsv.min.js"></script>
+  <script type="text/javascript" src="lib/d3-geo-projection.v2.min.js"></script>
+  <script type="text/javascript" src="lib/d3-legend.min.js"></script>
+  <script type="text/javascript" src="lib/d3-tip.min.js"></script>
+  <script type="text/javascript" src="lib/topojson.v2.min.js"></script>
+  <script type="text/javascript" src="http://d3js.org/d3.v3.min.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  
+</head>
+<body> 
+  <h1>Find Your Estimated Uber Travel Time in Atlanta, GA</h1>
+  <div class="base">
+    <div id="info" class="model">
+      <form>
+        <b>Start:</b>
+        <input type="text" id="start" class="txt" placeholder="Start"/>
+        <i>Enter an address or select</i><br>
+        <i>a census tract from the map</i><br>
+        <i>by double clicking to use</i><br>
+        <i>as your starting point</i><br>
+        <i>denoted with dark blue</i><br>
+        <br>
+        <b>Destination:</b>
+        <input type="text" id="destination" class="txt" placeholder="Destination"/>
+        <i>Enter an address or select</i><br>
+        <i>a census tract from the map</i><br>
+        <i>by single clicking to use</i><br>
+        <i>as your destination point</i><br>
+        <i>denoted with light blue</i><br>
+        <br>
+        <b>Date:</b>
+        <input type="date" id ="date" class="txt">
+        <i>Enter the date for which you</i><br>
+        <i>wish to ride</i><br>
+        <br>
+        <b>Time:</b>
+        <input type="time" id="time" class="txt">
+        <i>Enter the time for which you</i><br>
+        <i>wish to ride</i><br>
+        <br>
+        <input type="button" id="btn" class="txt" onclick=get_estimate() value="Find Estimated Time" ><br>
+      </form>
+      <div id="output" class="txt">Calculating...</div>
+    </div>
+    <div id="map" class="mapdiv">
+      <button onclick="zoomin()",type="button",class="mapbutton">Zoom in</button>
+      <button onclick="zoomout()",type="button",class="mapbutton">Zoom out</button>
+      <button onclick="panup()",type="button",class="mapbutton">Pan up</button>
+      <button onclick="pandown()",type="button",class="mapbutton">Pan down</button>
+      <button onclick="panleft()",type="button",class="mapbutton">Pan left</button>
+      <button onclick="panright()",type="button",class="mapbutton">Pan right</button>
+    </div>
+  </div>
+  <script>
+    function zoomin() {
+      svg.attr("viewBox",(plr + 38.5).toString() + " " + (pud + 25).toString()+ " " + (zw - 77).toString() + " " + (zh - 50).toString());
+      zw = zw - 77;
+      zh = zh - 50;
+      plr = plr + 38.5;
+      pud = pud + 25;
+    }
+    function zoomout() {
+      svg.attr("viewBox",(plr - 38.5).toString() + " " + (pud - 25).toString()+ " " + (zw + 77).toString() + " " + (zh + 50).toString());
+      zw = zw + 77;
+      zh = zh + 50;
+      plr = plr - 38.5;
+      pud = pud - 25;
+    }
+    function panup() {
+      svg.attr("viewBox",plr.toString() + " " + (pud-20).toString() + " " + zw.toString() + " " +zh.toString());
+      pud = pud - 20;
+    }
+    function pandown() {
+      svg.attr("viewBox",plr.toString() + " " + (pud+20).toString() + " " + zw.toString() + " " +zh.toString());
+      pud = pud + 20;
+    }
+    function panleft() {
+      svg.attr("viewBox",(plr - 20).toString() + " " + pud.toString() + " " + zw.toString() + " " +zh.toString());
+      plr = plr - 20;
+    }
+    function panright() {
+      svg.attr("viewBox",(plr + 20).toString() + " " + pud.toString() + " " + zw.toString() + " " +zh.toString());
+      plr = plr + 20;
+    }
+
+    // import axios from 'axios'
+
+    class Api {
+      url = 'http://127.0.0.1:5000';
+
+      get_estimate(state) {
+          return new Promise((resolve, reject) => {
+              axios.get(`${this.url}/api/get_estimate`, {params: state})
+                  .then(x => {
+                      resolve(x.data);
+                  })
+                  .catch(x => {
+                      reject(x);
+                  })
+          });
+      }
+}
+
+    api = new Api();
+
+    var zw = 692;
+    var zh = 350;
+    var pud = 70;
+    var plr = 40;
+    var w = 1000;
+    var h = 650;
+
+    var div = d3.select(".mapdiv").append("div")
+            .attr("class", "tooltip")
+          .attr("position", "absolute")
+          .attr("width", w/4)
+          .attr("height", h/4)
+          .style("opacity", 0)
+          .style("padding", "10px")
+          .append("text").text("_______");
+
+    var projection = d3.geo.mercator()
+                .center([ -84.17, 33.76])
+                .scale([ w*22 ]);
+
+    var path = d3.geo.path()
+            .projection(projection);
+
+    var svg = d3.select(".mapdiv")
+          .append("svg")
+          .attr("width", w)
+          .attr("height", h)
+          .attr("viewBox", "40 70 692 350")
+          .style("border-style", "solid")
+          .style("background-color", "#f7f7f7");
+
+    
+    st = "none";
+    de = "none";
+
+    d3.json("atlanta_censustracts.json", function(json) {
+      
+    svg.selectAll("path")
+      .data(json.features)
+      .enter()
+      .append("path")
+      .attr("d", path)
+      .attr("id", function(d){
+        return "mid" + d.properties["MOVEMENT_ID"];
+      })
+      .attr("class","census_id")
+      .style("fill", "aliceblue")
+      .style("stroke", "black")
+      .on("mouseover", function(d,i){
+        d3.select(".tooltip").style("opacity", 1);
+        d3.select(".tooltip").select("text").remove()
+        d3.select(".tooltip").append("text").text(d.properties["DISPLAY_NAME"]);
+      })
+      .on("mouseout", function(d){
+        d3.select(".tooltip").style("opacity", 0);
+        d3.select(".tooltip").select("text").remove();
+        d3.select(".tooltip").append("text").text("_____");
+      })
+      .on("dblclick", function(d) {
+      d3.selectAll(".census_id_g").style("fill", "aliceblue").attr("class","census_id");
+      d3.select(this).style("fill", "#00059c").attr("class","census_id_g");
+      st = d3.select(this).attr("id")
+      document.getElementById("start").value = d.properties["TRACTCE"];
+      ;})
+      .on("click",
+      function(d) {
+      d3.selectAll(".census_id_r").style("fill", "aliceblue").attr("class","census_id");
+      d3.select(this).style("fill", "#5eb4ff").attr("class","census_id_r");
+      de = d3.select(this).attr("id");
+      document.getElementById("destination").value = d.properties["TRACTCE"];
+      console.log(this)
+    });
+    });
+
+    //Have button create output div when clicked
+
+    //var btn=document.getElementById("btn")
+    function get_estimate() {
+      var output = document.getElementById("output");
+      output.textContent = "Calculating...";
+      var start = document.getElementById("start").value;
+      var dest = document.getElementById('destination').value;
+      var date = document.getElementById('date').value;
+      var time = document.getElementById('time').value;
+      var state = {"start": start, "dest": dest, "date": date, "time": time};
+      api.get_estimate(state).then(
+          data => {
+              if (data["code"] == 1) {
+                  console.log(data)
+                  console.log(start, dest, date, time);
+                  output.textContent = data["prediction"];
+                  output.style.display="flex";
+                  output.style.margin="0px 10px";
+                  output.style.padding="0px 5px";
+                  output.style.border="solid black";
+                  
+                  console.log(d3.selectAll(".census_id_g"))
+                  d3.select("#" + st).style("fill", "aliceblue").attr("class","census_id");
+                  st = "mid" + data["start_id"];
+                  d3.select("#" + st).style("fill", "#00059c").attr("class","census_id_g");
+                  console.log(d3.select("#" + st))
+
+                  console.log(d3.selectAll(".census_id_r"))
+                  d3.select("#" + de).style("fill", "aliceblue").attr("class","census_id");
+                  de = "mid" + data["dest_id"];
+                  d3.select("#" + de).style("fill", "#5eb4ff").attr("class","census_id_r");
+                  console.log(d3.select("#" + de))
+              } else {
+                  alert("Please enter valid inputs");
+                  output.textContent = " ";
+                  output.style.display = "none";
+              }
+          }
+      );
+
+      console.log(start, dest, date, time);
+      var output=document.getElementById("output");
+      output.style.display="flex";
+      output.style.margin="0px 10px";
+      output.style.padding="0px 5px";
+      output.style.border="solid black";
+    }
+
+    //var projection =d3.geoNaturalEarth()
+    //var path = d3.geoPath().projection(projection);
+  </script>
+</body>
